@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Ice-cream",
+    "slug": "Ice-cream",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Churn Watch listens to your ice cream maker's motor sound to detect when the mixture is done.",
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["RECORD_AUDIO", "POST_NOTIFICATIONS"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Churn Watch listens to your ice cream maker's motor sound to detect when the mixture is done."
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "sounds": []
+        }
+      ]
+    ]
+  }
+}
