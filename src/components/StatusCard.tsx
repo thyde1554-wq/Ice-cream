@@ -8,28 +8,49 @@ const REASON_LABEL: Record<string, string> = {
   'variance-shift': "Sound's texture changed",
 };
 
-function phaseHeadline(snapshot: DetectorSnapshot): string {
+function phaseHeadline(snapshot: DetectorSnapshot, isRecording: boolean): string {
   switch (snapshot.phase) {
     case 'idle':
       return 'Ready to listen';
     case 'calibrating':
-      return 'Learning your machine’s sound…';
+      return isRecording ? 'Learning your machine’s sound…' : 'Listening interrupted';
     case 'monitoring':
-      return 'Listening for a change…';
+      return isRecording ? 'Listening for a change…' : 'Listening interrupted';
+    case 'paused':
+      return 'Paused';
     case 'done':
       return '🍦 Done!';
   }
 }
 
-export function StatusCard({ snapshot }: { snapshot: DetectorSnapshot }) {
+export function StatusCard({
+  snapshot,
+  isRecording,
+}: {
+  snapshot: DetectorSnapshot;
+  isRecording: boolean;
+}) {
   const calibrationSecondsLeft = Math.ceil(snapshot.calibrationRemainingMs / 1000);
   const holdProgress = Math.min(1, snapshot.triggerHeldMs / DEFAULT_CONFIG.sustainMs);
+  const interrupted = (snapshot.phase === 'calibrating' || snapshot.phase === 'monitoring') && !isRecording;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.headline}>{phaseHeadline(snapshot)}</Text>
+      <Text style={styles.headline}>{phaseHeadline(snapshot, isRecording)}</Text>
 
-      {snapshot.phase === 'calibrating' && (
+      {interrupted && (
+        <Text style={styles.detail}>
+          Lost the microphone — your baseline is safe, tap Resume to keep going.
+        </Text>
+      )}
+
+      {snapshot.phase === 'paused' && (
+        <Text style={styles.detail}>
+          Your baseline is saved — tap Resume to keep listening right where you left off.
+        </Text>
+      )}
+
+      {snapshot.phase === 'calibrating' && isRecording && (
         <Text style={styles.detail}>{calibrationSecondsLeft}s remaining</Text>
       )}
 
@@ -39,7 +60,7 @@ export function StatusCard({ snapshot }: { snapshot: DetectorSnapshot }) {
             baseline {snapshot.baselineMean?.toFixed(1) ?? '—'} dB · now{' '}
             {snapshot.currentMean?.toFixed(1) ?? '—'} dB
           </Text>
-          {snapshot.reason && (
+          {snapshot.reason && isRecording && (
             <View style={styles.holdRow}>
               <Text style={styles.detail}>{REASON_LABEL[snapshot.reason]}, confirming…</Text>
               <View style={styles.holdTrack}>

@@ -8,8 +8,13 @@ import { StatusCard } from './src/components/StatusCard';
 
 export default function App() {
   const monitor = useAudioMonitor();
-  const { snapshot } = monitor;
-  const isActive = snapshot.phase !== 'idle' && snapshot.phase !== 'done';
+  const { snapshot, isRecording } = monitor;
+
+  const isActiveListening =
+    (snapshot.phase === 'calibrating' || snapshot.phase === 'monitoring') && isRecording;
+  const needsResume =
+    snapshot.phase === 'paused' ||
+    ((snapshot.phase === 'calibrating' || snapshot.phase === 'monitoring') && !isRecording);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -21,9 +26,9 @@ export default function App() {
           </Text>
         </View>
 
-        <StatusCard snapshot={snapshot} />
+        <StatusCard snapshot={snapshot} isRecording={isRecording} />
 
-        <LevelMeter db={snapshot.currentMean ?? null} active={monitor.isRecording} />
+        <LevelMeter db={snapshot.currentMean ?? null} active={isActiveListening} />
 
         {monitor.permissionDenied && (
           <Text style={styles.error}>
@@ -32,14 +37,56 @@ export default function App() {
         )}
         {monitor.error && <Text style={styles.error}>{monitor.error}</Text>}
 
-        <Pressable
-          style={[styles.button, isActive && styles.buttonStop]}
-          onPress={() => (isActive || snapshot.phase === 'done' ? monitor.stop() : monitor.start())}
-        >
-          <Text style={styles.buttonText}>
-            {snapshot.phase === 'done' ? 'Reset' : isActive ? 'Stop listening' : 'Start listening'}
-          </Text>
-        </Pressable>
+        {snapshot.phase === 'idle' && (
+          <Pressable style={styles.button} onPress={monitor.start}>
+            <Text style={styles.buttonText}>Start listening</Text>
+          </Pressable>
+        )}
+
+        {isActiveListening && (
+          <View style={styles.buttonRow}>
+            <Pressable
+              style={[styles.button, styles.buttonSecondary, styles.buttonFlex]}
+              onPress={monitor.pause}
+            >
+              <Text style={styles.buttonSecondaryText}>Pause</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, styles.buttonStop, styles.buttonFlex]}
+              onPress={monitor.stop}
+            >
+              <Text style={styles.buttonText}>End session</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {needsResume && (
+          <View style={styles.buttonRow}>
+            <Pressable style={[styles.button, styles.buttonFlex]} onPress={monitor.resume}>
+              <Text style={styles.buttonText}>Resume</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, styles.buttonStop, styles.buttonFlex]}
+              onPress={monitor.stop}
+            >
+              <Text style={styles.buttonText}>End session</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {snapshot.phase === 'done' && (
+          <View style={styles.buttonRow}>
+            <Pressable style={[styles.button, styles.buttonFlex]} onPress={monitor.stop}>
+              <Text style={styles.buttonText}>Confirm done</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, styles.buttonSecondary, styles.buttonFlex]}
+              onPress={monitor.dismissDone}
+            >
+              <Text style={styles.buttonSecondaryText}>False alarm, keep listening</Text>
+            </Pressable>
+          </View>
+        )}
 
         <View style={styles.sensitivitySection}>
           <Text style={styles.sensitivityLabel}>Sensitivity</Text>
@@ -48,7 +95,8 @@ export default function App() {
 
         <Text style={styles.hint}>
           Place your phone near the machine, start it churning, then tap Start. Give it about a
-          minute to learn the baseline sound before it starts watching for changes.
+          minute to learn the baseline sound before it starts watching for changes. Need to check
+          on it? Tap Pause first — Resume picks up right where you left off.
         </Text>
 
         <StatusBar style="auto" />
@@ -85,6 +133,13 @@ const styles = StyleSheet.create({
     color: '#c0392b',
     fontSize: 13,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  buttonFlex: {
+    flex: 1,
+  },
   button: {
     backgroundColor: '#ff8f5e',
     paddingVertical: 16,
@@ -94,9 +149,17 @@ const styles = StyleSheet.create({
   buttonStop: {
     backgroundColor: '#555',
   },
+  buttonSecondary: {
+    backgroundColor: '#eee',
+  },
   buttonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonSecondaryText: {
+    color: '#333',
+    fontSize: 15,
     fontWeight: '700',
   },
   sensitivitySection: {

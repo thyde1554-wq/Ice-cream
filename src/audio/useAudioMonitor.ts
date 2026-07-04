@@ -31,8 +31,16 @@ export interface AudioMonitor {
   error: string | null;
   sensitivity: Sensitivity;
   setSensitivity: (sensitivity: Sensitivity) => void;
+  /** Begins a fresh session: recalibrates the baseline from scratch. */
   start: () => Promise<void>;
+  /** Ends the session entirely and forgets the learned baseline. */
   stop: () => Promise<void>;
+  /** Suspends listening (e.g. to check on the machine) without losing the baseline. */
+  pause: () => Promise<void>;
+  /** Restarts the mic and continues the same session (after a manual pause or an unexpected interruption). */
+  resume: () => Promise<void>;
+  /** Dismisses a "done" as a false alarm and goes back to monitoring with the same baseline. */
+  dismissDone: () => void;
 }
 
 const IDLE_SNAPSHOT: DetectorSnapshot = {
@@ -44,6 +52,7 @@ const IDLE_SNAPSHOT: DetectorSnapshot = {
   calibrationRemainingMs: 0,
   triggerHeldMs: 0,
   reason: null,
+  pausedFrom: null,
 };
 
 /**
@@ -123,6 +132,40 @@ export function useAudioMonitor(initialSensitivity: Sensitivity = 'medium'): Aud
     }
   }, [recorder]);
 
+  const pause = useCallback(async () => {
+    setError(null);
+    try {
+      if (recorder.isRecording) {
+        await recorder.stop();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to pause listening.');
+    } finally {
+      detectorRef.current.pause(Date.now());
+      setSnapshot(detectorRef.current.snapshot());
+    }
+  }, [recorder]);
+
+  const resume = useCallback(async () => {
+    setError(null);
+    try {
+      if (detectorRef.current.getPhase() === 'paused') {
+        detectorRef.current.resume(Date.now());
+      }
+      await recorder.prepareToRecordAsync(RECORDING_OPTIONS);
+      recorder.record();
+      setSnapshot(detectorRef.current.snapshot());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to resume listening.');
+    }
+  }, [recorder]);
+
+  const dismissDone = useCallback(() => {
+    detectorRef.current.dismissDone();
+    notifiedRef.current = false;
+    setSnapshot(detectorRef.current.snapshot());
+  }, []);
+
   useEffect(() => {
     return () => {
       if (recorder.isRecording) {
@@ -140,5 +183,8 @@ export function useAudioMonitor(initialSensitivity: Sensitivity = 'medium'): Aud
     setSensitivity,
     start,
     stop,
+    pause,
+    resume,
+    dismissDone,
   };
 }

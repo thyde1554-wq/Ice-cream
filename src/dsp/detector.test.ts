@@ -122,4 +122,105 @@ describe('ChurnDoneDetector', () => {
     expect(high.riseThresholdDb).toBeLessThan(low.riseThresholdDb);
     expect(high.dropThresholdDb).toBeLessThan(low.dropThresholdDb);
   });
+
+  it('pause/resume during monitoring preserves the baseline across a long gap', () => {
+    const detector = new ChurnDoneDetector(CONFIG);
+    detector.start(0);
+    let t = 0;
+    feed(detector, -20, t, CONFIG.calibrationMs);
+    t += CONFIG.calibrationMs;
+    const beforePause = detector.snapshot(t);
+
+    detector.pause(t);
+    expect(detector.getPhase()).toBe('paused');
+
+    // a long real-world gap while the user checks on the machine
+    const resumeAt = t + 5 * 60_000;
+    detector.resume(resumeAt);
+
+    expect(detector.getPhase()).toBe('monitoring');
+    const afterResume = detector.snapshot(resumeAt);
+    expect(afterResume.baselineMean).toBe(beforePause.baselineMean);
+    expect(afterResume.baselineStd).toBe(beforePause.baselineStd);
+  });
+
+  it('pause/resume during calibration preserves remaining calibration time across the gap', () => {
+    const detector = new ChurnDoneDetector(CONFIG);
+    detector.start(0);
+    let t = 0;
+    // partway through calibration
+    feed(detector, -20, t, CONFIG.calibrationMs / 2);
+    t += CONFIG.calibrationMs / 2;
+    const remainingBeforePause = detector.snapshot(t).calibrationRemainingMs;
+    expect(remainingBeforePause).toBeGreaterThan(0);
+
+    detector.pause(t);
+    const pausedSnapshot = detector.snapshot(t + 60_000);
+    // the countdown should be frozen while paused, not still ticking down
+    expect(pausedSnapshot.calibrationRemainingMs).toBeCloseTo(remainingBeforePause, -2);
+
+    const resumeAt = t + 60_000;
+    detector.resume(resumeAt);
+    expect(detector.getPhase()).toBe('calibrating');
+    expect(detector.snapshot(resumeAt).calibrationRemainingMs).toBeCloseTo(remainingBeforePause, -2);
+
+    // finishing the remaining calibration should still land on monitoring with a good baseline
+    const finalSnapshot = feed(detector, -20, resumeAt, remainingBeforePause + 500);
+    expect(finalSnapshot.phase).toBe('monitoring');
+    expect(finalSnapshot.baselineMean).toBeCloseTo(-20, 0);
+  });
+
+  it('pause clears an in-progress trigger hold so resuming does not instantly fire done', () => {
+    const detector = new ChurnDoneDetector(CONFIG);
+    detector.start(0);
+    let t = 0;
+    feed(detector, -20, t, CONFIG.calibrationMs);
+    t += CONFIG.calibrationMs;
+
+    // rise starts but hasn't been sustained long enough to trigger yet
+    feed(detector, -20 + CONFIG.riseThresholdDb + 2, t, CONFIG.shortWindowMs + 500);
+    t += CONFIG.shortWindowMs + 500;
+    expect(detector.snapshot(t).reason).toBe('level-rise');
+
+    detector.pause(t);
+    const resumeAt = t + 10 * 60_000; // long gap
+    detector.resume(resumeAt);
+
+    // one fresh sample after resuming should not instantly satisfy sustainMs
+    // from the stale pre-pause trigger timestamp
+    const snapshot = detector.addSample(-20 + CONFIG.riseThresholdDb + 2, resumeAt + 250);
+    expect(snapshot.phase).toBe('monitoring');
+  });
+
+  it('pause() is a no-op when idle or done; resume() is a no-op when not paused', () => {
+    const detector = new ChurnDoneDetector(CONFIG);
+    detector.pause(0);
+    expect(detector.getPhase()).toBe('idle');
+
+    detector.resume(0);
+    expect(detector.getPhase()).toBe('idle');
+  });
+
+  it('dismissDone() returns to monitoring with the same baseline, not recalibrated', () => {
+    const detector = new ChurnDoneDetector(CONFIG);
+    detector.start(0);
+    let t = 0;
+    feed(detector, -20, t, CONFIG.calibrationMs);
+    t += CONFIG.calibrationMs;
+    const baseline = detector.snapshot(t).baselineMean;
+
+    const doneSnapshot = feed(
+      detector,
+      -20 + CONFIG.riseThresholdDb + 2,
+      t,
+      CONFIG.shortWindowMs + CONFIG.sustainMs + 1000
+    );
+    expect(doneSnapshot.phase).toBe('done');
+
+    detector.dismissDone();
+    const afterDismiss = detector.snapshot(t + 1);
+    expect(afterDismiss.phase).toBe('monitoring');
+    expect(afterDismiss.baselineMean).toBe(baseline);
+    expect(afterDismiss.reason).toBeNull();
+  });
 });
