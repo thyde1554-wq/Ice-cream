@@ -14,6 +14,7 @@
       }
     },
     "android": {
+      "package": "com.thyde1554.churnwatch",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
